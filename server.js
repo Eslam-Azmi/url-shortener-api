@@ -35,14 +35,25 @@ app.get('/', (req, res) => {
 
 app.post('/shorten',async (req, res) => {
     const urlToShorten = req.body.longUrl;
-
-    let shortCode = randomGenerator();
-    let isCollision = true;
     try {
+        const old = await pool.query('SELECT short_code FROM urls WHERE original_url = $1', [urlToShorten]);
+
+        if (old.rows.length > 0){
+            const oldShortCode = old.rows[0].short_code;
+            return res.json({
+                message: "You already shortened that link",
+                originalUrl: urlToShorten,
+                shortUrl: `http://localhost:${PORT}/${oldShortCode}`
+            });
+        }
+
+        let shortCode = randomGenerator();
+        let isCollision = true;
+        
         while (isCollision){
             const result = await pool.query('SELECT short_code FROM urls WHERE short_code = $1', [shortCode]);
             
-            if (result.rows.length == 0) {
+            if (result.rows.length === 0) {
                 isCollision = false;
             }else{
                 shortCode = randomGenerator();
@@ -66,7 +77,7 @@ app.get('/:shortCode',async (req,res) => {
 
     try {
         const result = await pool.query('SELECT original_url FROM urls WHERE short_code = $1', [code]);
-        if (result.rows.length === 1){
+        if (result.rows.length > 0){
             res.redirect(result.rows[0].original_url)
         }else{
             res.status(404).json({error: "Short link not found"})
