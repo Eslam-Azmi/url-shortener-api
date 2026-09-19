@@ -1,6 +1,18 @@
+require('dotenv').config();
+const { Pool } = require('pg');
+
 const express = require('express');
 const app = express();
 const PORT = 3000;
+
+const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+});
+
+// Test the connection when the server boots
+pool.connect()
+    .then(() => console.log("Connected to PostgreSQL successfully!"))
+    .catch(err => console.error("Database connection error", err.stack));
 
 let map = {};
 
@@ -23,21 +35,33 @@ app.get('/', (req, res) => {
     res.json({ message: "URL Shortener API is up and running!" });
 });
 
-app.post('/shorten', (req, res) => {
+app.post('/shorten',async (req, res) => {
     const urlToShorten = req.body.longUrl;
 
     let shortCode = randomGenerator();
-    while (Object.hasOwn(map, shortCode)){
-        shortCode = randomGenerator();
-    }
+    let isCollision = true;
+    try {
+        while (isCollision){
+            const result = await pool.query('SELECT short_code FROM urls WHERE short_code = $1', [shortCode]);
+            
+            if (result.rows.length == 0) {
+                isCollision = false;
+            }else{
+                shortCode = randomGenerator();
+            }
 
-    map[shortCode] = urlToShorten;
-    
-    res.json({
-        message: "Data recieved successfully!",
-        originalUrl: urlToShorten,
-        shortUrl: `http://localhost:${PORT}/${shortCode}`
-    });
+            await pool.query('INSERT INTO urls (short_code, original_url) VALUES ($1, $2)', [shortCode, urlToShorten]);
+
+            res.json({
+                message: "Data successfully saved to database!",
+                originalUrl: urlToShorten,
+                shortUrl: `http://localhost:${PORT}/${shortCode}`
+            });
+        }
+    }catch(error){
+        console.error(error);
+        res.status(500).json({error: "Server encountered database error"});
+    }
 });
 
 app.get('/:shortCode', (req,res) => {
