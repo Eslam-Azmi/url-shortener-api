@@ -9,12 +9,10 @@ const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
 });
 
-// Test the connection when the server boots
 pool.connect()
     .then(() => console.log("Connected to PostgreSQL successfully!"))
     .catch(err => console.error("Database connection error", err.stack));
 
-let map = {};
 
 function randomGenerator() {
     const contianer = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -49,14 +47,29 @@ app.post('/shorten',async (req, res) => {
             }else{
                 shortCode = randomGenerator();
             }
+        }
+        await pool.query('INSERT INTO urls (short_code, original_url) VALUES ($1, $2)', [shortCode, urlToShorten]);
 
-            await pool.query('INSERT INTO urls (short_code, original_url) VALUES ($1, $2)', [shortCode, urlToShorten]);
+        res.json({
+            message: "Data successfully saved to database!",
+            originalUrl: urlToShorten,
+            shortUrl: `http://localhost:${PORT}/${shortCode}`
+        });
+    }catch(error){
+        console.error(error);
+        res.status(500).json({error: "Server encountered database error"});
+    }
+});
 
-            res.json({
-                message: "Data successfully saved to database!",
-                originalUrl: urlToShorten,
-                shortUrl: `http://localhost:${PORT}/${shortCode}`
-            });
+app.get('/:shortCode',async (req,res) => {
+    const code = req.params.shortCode;
+
+    try {
+        const result = await pool.query('SELECT original_url FROM urls WHERE short_code = $1', [code]);
+        if (result.rows.length === 1){
+            res.redirect(result.rows[0].original_url)
+        }else{
+            res.status(404).json({error: "Short link not found"})
         }
     }catch(error){
         console.error(error);
@@ -64,18 +77,7 @@ app.post('/shorten',async (req, res) => {
     }
 });
 
-app.get('/:shortCode', (req,res) => {
-    const code = req.params.shortCode;
 
-    if (Object.hasOwn(map,code)){
-        res.redirect(map[code]);
-    }else{
-        res.status(404).json({error: "Short link not found"});
-    }
-});
-
-
-// Boot up the server and listen for connections
 app.listen(PORT, () => {
     console.log(`Server is listening on http://localhost:${PORT}`);
 });
