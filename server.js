@@ -35,6 +35,13 @@ app.get('/', (req, res) => {
 
 app.post('/shorten',async (req, res) => {
     const urlToShorten = req.body.longUrl;
+
+    try {
+        new URL(urlToShorten);
+    }catch(err){
+        return res.status(400).json({error: "Invalid URL format. Must include http:// or https://"});
+    }
+
     try {
         const old = await pool.query('SELECT short_code FROM urls WHERE original_url = $1', [urlToShorten]);
 
@@ -76,12 +83,30 @@ app.get('/:shortCode',async (req,res) => {
     const code = req.params.shortCode;
 
     try {
-        const result = await pool.query('SELECT original_url FROM urls WHERE short_code = $1', [code]);
+        const result = await pool.query('UPDATE urls SET clicks = clicks+1 WHERE short_code = $1 RETURNING original_url', [code]);
         if (result.rows.length > 0){
             res.redirect(result.rows[0].original_url)
         }else{
             res.status(404).json({error: "Short link not found"})
         }
+    }catch(error){
+        console.error(error);
+        res.status(500).json({error: "Server encountered database error"});
+    }
+});
+
+app.get('/status/:shortCode',async (req,res) => {
+    const code = req.params.shortCode;
+
+    try {
+        const result = await pool.query('SELECT * FROM urls WHERE short_code = $1', [code]);
+
+        if (result.rows.length > 0){
+            res.json(result.rows[0]);
+        }else{
+            res.status(404).json({ error: "Short link not found" });
+        }
+
     }catch(error){
         console.error(error);
         res.status(500).json({error: "Server encountered database error"});
