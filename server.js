@@ -50,7 +50,7 @@ app.post('/shorten',async (req, res) => {
             return res.json({
                 message: "You already shortened that link",
                 originalUrl: urlToShorten,
-                shortUrl: `http://localhost:${PORT}/${oldShortCode}`
+                shortUrl: `${req.protocol}://${req.get('host')}/${oldShortCode}`
             });
         }
 
@@ -71,7 +71,7 @@ app.post('/shorten',async (req, res) => {
         res.json({
             message: "Data successfully saved to database!",
             originalUrl: urlToShorten,
-            shortUrl: `http://localhost:${PORT}/${shortCode}`
+            shortUrl: `${req.protocol}://${req.get('host')}/${shortCode}`
         });
     }catch(error){
         console.error(error);
@@ -114,6 +114,10 @@ app.get('/status/:shortCode',async (req,res) => {
 });
 
 
-app.listen(PORT, () => {
-    console.log(`Server is listening on http://localhost:${PORT}`);
-});
+if (process.env.NODE_ENV !== 'production') {
+    app.listen(PORT, () => {
+        console.log(`Server is listening on http://localhost:${PORT}`);
+    });
+}
+
+module.exports = app;
