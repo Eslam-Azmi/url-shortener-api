@@ -1,6 +1,14 @@
 require('dotenv').config();
 const { Pool } = require('pg');
 
+const { rateLimit } = require('express-rate-limit');
+const limiter = rateLimit ({
+    windowMs: 15 * 60 * 1000,  // every 15 minutes
+    limit: 100,
+    message: "Time limit reached",
+    statusCode: 429
+})
+
 const express = require('express');
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -15,11 +23,11 @@ pool.connect()
 
 
 function randomGenerator() {
-    const contianer = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    const container = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     let ans = "";
 
     for (let i = 0; i < 6; i++){
-        ans += contianer[Math.floor(Math.random() * 62)];
+        ans += container[Math.floor(Math.random() * 62)];
     }
 
     return ans;
@@ -33,7 +41,7 @@ app.get('/', (req, res) => {
     res.json({ message: "URL Shortener API is up and running!" });
 });
 
-app.post('/shorten',async (req, res) => {
+app.post('/shorten',limiter, async (req, res) => {
     const urlToShorten = req.body.longUrl;
 
     try {
