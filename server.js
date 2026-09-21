@@ -10,6 +10,7 @@ const limiter = rateLimit ({
 })
 
 const express = require('express');
+const useragent = require('express-useragent');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -35,6 +36,7 @@ function randomGenerator() {
 
 // Middleware: Tells Express to parse incoming JSON data from requests
 app.use(express.json());
+app.use(useragent.express());
 
 // A simple GET route to verify the server is responding
 app.get('/', (req, res) => {
@@ -93,6 +95,12 @@ app.get('/:shortCode',async (req,res) => {
     try {
         const result = await pool.query('UPDATE urls SET clicks = clicks+1 WHERE short_code = $1 RETURNING original_url', [code]);
         if (result.rows.length > 0){
+            const referrer = req.get('Referrer') || 'Direct';
+            const browser = req.useragent ? `${req.useragent.os} ${req.useragent.browser}` : 'Unknown'
+            const country = req.headers['x-vercel-ip-country'] || 'Local'
+
+            await pool.query('INSERT INTO clicks(short_code, referrer, user_agent, ip_country) VALUES ($1, $2, $3, $4)', [code, referrer, browser, country]);
+
             res.redirect(result.rows[0].original_url)
         }else{
             res.status(404).json({error: "Short link not found"})
@@ -109,12 +117,16 @@ app.get('/status/:shortCode',async (req,res) => {
     try {
         const result = await pool.query('SELECT * FROM urls WHERE short_code = $1', [code]);
 
-        if (result.rows.length > 0){
-            res.json(result.rows[0]);
-        }else{
-            res.status(404).json({ error: "Short link not found" });
+        if (result.rows.length === 0){
+            return res.status(404).json({ error: "Short link not found" });
         }
 
+        const analytics = await pool.query('SELECT clicked_at, referrer, user_agent, ip_country FROM clicks WHERE short_code = $1 ORDER BY clicked_at DESC LIMIT 50', [code]);
+
+        res.json({
+            url: result.rows[0],
+            recent_activity: analytics.rows
+        });
     }catch(error){
         console.error(error);
         res.status(500).json({error: "Server encountered database error"});
