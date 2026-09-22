@@ -52,6 +52,10 @@ app.get('/', (req, res) => {
 app.post('/shorten',limiter, async (req, res) => {
     const urlToShorten = req.body.longUrl;
 
+    if (!urlToShorten) {
+        return res.status(400).json({ error: "Missing longUrl in request body" });
+    }
+
     try {
         new URL(urlToShorten);
     }catch(err){
@@ -99,7 +103,14 @@ app.get('/:shortCode',async (req,res) => {
     const code = req.params.shortCode;
 
     try {
-        const cachedUrl = await redis.get(code);
+        let cachedUrl = null;
+
+        try {
+            cachedUrl = await redis.get(code);
+        }catch(redisError){
+            console.error("Redis GET failure, falling back to PostgreSQL:", redisError.message);
+        }
+
         let redirectedUrl;
 
         if (cachedUrl){
@@ -115,7 +126,11 @@ app.get('/:shortCode',async (req,res) => {
 
             redirectedUrl = result.rows[0].original_url;
 
-            await redis.set(code, redirectedUrl, {ex : 3600});
+            try {
+                await redis.set(code, redirectedUrl, {ex : 3600});
+            } catch(redisError){
+                console.error("Redis SET failure, continuing without caching:", redisError.message);
+            }
         }
         const referrer = req.get('Referrer') || 'Direct';
         const browser = req.useragent ? `${req.useragent.os} ${req.useragent.browser}` : 'Unknown'
