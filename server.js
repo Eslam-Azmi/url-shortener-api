@@ -1,7 +1,26 @@
 require('dotenv').config();
+const express = require('express');
 const { Pool } = require('pg');
+const { Redis } = require('@upstash/redis');
+const { rateLimit } = require('express-rate-limit');
+const useragent = require('express-useragent');
 
-const { rateLimit } = require('express-rate-limit');  //adding anti-spam
+// INITIALIZATIONS
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+});
+pool.connect()
+    .then(() => console.log("Connected to PostgreSQL successfully!"))
+    .catch(err => console.error("Database connection error", err.stack));
+
+const redis = new Redis({
+    url: process.env.UPSTASH_REDIS_REST_URL,
+    token: process.env.UPSTASH_REDIS_REST_TOKEN,
+});
+
 const limiter = rateLimit ({
     windowMs: 15 * 60 * 1000,  // every 15 minutes
     limit: 100,
@@ -9,27 +28,11 @@ const limiter = rateLimit ({
     statusCode: 429
 })
 
-const { Redis } = require('@upstash/redis');   // redis for caching 
+// MIDDLEWARE
+app.use(express.json());
+app.use(useragent.express());
 
-const redis = new Redis({
-  url: process.env.UPSTASH_REDIS_REST_URL,
-  token: process.env.UPSTASH_REDIS_REST_TOKEN,
-});
-
-const express = require('express');
-const useragent = require('express-useragent'); // for more analytics
-const app = express();
-const PORT = process.env.PORT || 3000;
-
-const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-});
-
-pool.connect()
-    .then(() => console.log("Connected to PostgreSQL successfully!"))
-    .catch(err => console.error("Database connection error", err.stack));
-
-
+// FUNCTIONS
 function randomGenerator() {
     const container = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     let ans = "";
@@ -41,11 +44,7 @@ function randomGenerator() {
     return ans;
 }
 
-// Middleware: Tells Express to parse incoming JSON data from requests
-app.use(express.json());
-app.use(useragent.express());
-
-// A simple GET route to verify the server is responding
+// API ROUTES 
 app.get('/', (req, res) => {
     res.json({ message: "URL Shortener API is up and running!" });
 });
