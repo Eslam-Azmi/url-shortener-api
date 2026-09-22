@@ -1,7 +1,7 @@
 require('dotenv').config();
 const { Pool } = require('pg');
 
-const { rateLimit } = require('express-rate-limit');
+const { rateLimit } = require('express-rate-limit');  //adding anti-spam
 const limiter = rateLimit ({
     windowMs: 15 * 60 * 1000,  // every 15 minutes
     limit: 100,
@@ -9,8 +9,15 @@ const limiter = rateLimit ({
     statusCode: 429
 })
 
+const { Redis } = require('@upstash/redis');   // redis for caching 
+
+const redis = new Redis({
+  url: process.env.UPSTASH_REDIS_REST_URL,
+  token: process.env.UPSTASH_REDIS_REST_TOKEN,
+});
+
 const express = require('express');
-const useragent = require('express-useragent');
+const useragent = require('express-useragent'); // for more analytics
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -93,18 +100,31 @@ app.get('/:shortCode',async (req,res) => {
     const code = req.params.shortCode;
 
     try {
-        const result = await pool.query('UPDATE urls SET clicks = clicks+1 WHERE short_code = $1 RETURNING original_url', [code]);
-        if (result.rows.length > 0){
-            const referrer = req.get('Referrer') || 'Direct';
-            const browser = req.useragent ? `${req.useragent.os} ${req.useragent.browser}` : 'Unknown'
-            const country = req.headers['x-vercel-ip-country'] || 'Local'
+        const cachedUrl = await redis.get(code);
+        let redirectedUrl;
 
-            await pool.query('INSERT INTO clicks(short_code, referrer, user_agent, ip_country) VALUES ($1, $2, $3, $4)', [code, referrer, browser, country]);
+        if (cachedUrl){
+            redirectedUrl = cachedUrl;
 
-            res.redirect(result.rows[0].original_url)
+            await pool.query('UPDATE urls SET clicks = clicks+1 WHERE short_code = $1', [code]);
         }else{
-            res.status(404).json({error: "Short link not found"})
+            const result = await pool.query('UPDATE urls SET clicks = clicks+1 WHERE short_code = $1 RETURNING original_url', [code]);
+
+            if (result.rows.length === 0){
+                return res.status(404).json({error: "Short link not found"});
+            }
+
+            redirectedUrl = result.rows[0].original_url;
+
+            await redis.set(code, redirectedUrl, {ex : 3600});
         }
+        const referrer = req.get('Referrer') || 'Direct';
+        const browser = req.useragent ? `${req.useragent.os} ${req.useragent.browser}` : 'Unknown'
+        const country = req.headers['x-vercel-ip-country'] || 'Local'
+
+        await pool.query('INSERT INTO clicks(short_code, referrer, user_agent, ip_country) VALUES ($1, $2, $3, $4)', [code, referrer, browser, country]);
+
+        res.redirect(redirectedUrl);
     }catch(error){
         console.error(error);
         res.status(500).json({error: "Server encountered database error"});
