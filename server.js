@@ -31,6 +31,7 @@ const limiter = rateLimit ({
 // MIDDLEWARE
 app.use(express.json());
 app.use(useragent.express());
+app.use(express.static('public')); // Serves the frontend files
 
 // FUNCTIONS
 function randomGenerator() {
@@ -45,9 +46,9 @@ function randomGenerator() {
 }
 
 // API ROUTES 
-app.get('/', (req, res) => {
-    res.json({ message: "URL Shortener API is up and running!" });
-});
+// app.get('/', (req, res) => {
+//     res.json({ message: "URL Shortener API is up and running!" });
+// });
 
 app.post('/shorten',limiter, async (req, res) => {
     const urlToShorten = req.body.longUrl;
