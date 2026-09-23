@@ -45,11 +45,6 @@ function randomGenerator() {
     return ans;
 }
 
-// API ROUTES 
-// app.get('/', (req, res) => {
-//     res.json({ message: "URL Shortener API is up and running!" });
-// });
-
 app.post('/shorten',limiter, async (req, res) => {
     const urlToShorten = req.body.longUrl;
 
