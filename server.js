@@ -4,6 +4,7 @@ const { Pool } = require('pg');
 const { Redis } = require('@upstash/redis');
 const { rateLimit } = require('express-rate-limit');
 const useragent = require('express-useragent');
+const path = require('path'); // ADDED: Required for Vercel file routing
 
 // INITIALIZATIONS
 const app = express();
@@ -26,12 +27,17 @@ const limiter = rateLimit ({
     limit: 100,
     message: "Time limit reached",
     statusCode: 429
-})
+});
 
 // MIDDLEWARE
 app.use(express.json());
 app.use(useragent.express());
-app.use(express.static('public')); // Serves the frontend files
+
+app.use(express.static(path.join(__dirname, 'public')));
+
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
 
 // FUNCTIONS
 function randomGenerator() {
@@ -45,7 +51,7 @@ function randomGenerator() {
     return ans;
 }
 
-app.post('/shorten',limiter, async (req, res) => {
+app.post('/shorten', limiter, async (req, res) => {
     const urlToShorten = req.body.longUrl;
 
     if (!urlToShorten) {
@@ -95,7 +101,29 @@ app.post('/shorten',limiter, async (req, res) => {
     }
 });
 
-app.get('/:shortCode',async (req,res) => {
+app.get('/status/:shortCode', async (req,res) => {
+    const code = req.params.shortCode;
+
+    try {
+        const result = await pool.query('SELECT * FROM urls WHERE short_code = $1', [code]);
+
+        if (result.rows.length === 0){
+            return res.status(404).json({ error: "Short link not found" });
+        }
+
+        const analytics = await pool.query('SELECT clicked_at, referrer, user_agent, ip_country FROM clicks WHERE short_code = $1 ORDER BY clicked_at DESC LIMIT 50', [code]);
+
+        res.json({
+            url: result.rows[0],
+            recent_activity: analytics.rows
+        });
+    }catch(error){
+        console.error(error);
+        res.status(500).json({error: "Server encountered database error"});
+    }
+});
+
+app.get('/:shortCode', async (req,res) => {
     const code = req.params.shortCode;
 
     try {
@@ -140,29 +168,6 @@ app.get('/:shortCode',async (req,res) => {
         res.status(500).json({error: "Server encountered database error"});
     }
 });
-
-app.get('/status/:shortCode',async (req,res) => {
-    const code = req.params.shortCode;
-
-    try {
-        const result = await pool.query('SELECT * FROM urls WHERE short_code = $1', [code]);
-
-        if (result.rows.length === 0){
-            return res.status(404).json({ error: "Short link not found" });
-        }
-
-        const analytics = await pool.query('SELECT clicked_at, referrer, user_agent, ip_country FROM clicks WHERE short_code = $1 ORDER BY clicked_at DESC LIMIT 50', [code]);
-
-        res.json({
-            url: result.rows[0],
-            recent_activity: analytics.rows
-        });
-    }catch(error){
-        console.error(error);
-        res.status(500).json({error: "Server encountered database error"});
-    }
-});
-
 
 if (process.env.NODE_ENV !== 'production') {
     app.listen(PORT, () => {
